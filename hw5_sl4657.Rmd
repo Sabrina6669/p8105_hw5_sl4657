@@ -28,3 +28,33 @@ iris_without_na=map_dfr(iris_with_missing, deal_miss)
 iris_without_na
 ```
 
+# Problem 2
+```{r}
+file_name=list.files(path = "./data") 
+df= tibble("file_name"=file_name)
+df  
+
+df=df %>% 
+  mutate(
+    value=map(file_name, ~read_csv(str_c("./data/", .x))) 
+    )%>% 
+  unnest()
+df
+
+df=df %>% 
+  rename_all(~str_replace_all(., "week_", "")) %>% 
+  gather(key = week_day, value = week_value, `1`:`8`) %>% 
+  separate(file_name, into=c("group", "subject_id"), sep = "_") %>% 
+  mutate(subject_id = gsub(".csv$", "", subject_id)) %>% 
+  mutate(group= recode(group, "con"="control", "exp"="experimental"))
+df
+
+df %>% 
+  ggplot(aes(x=week_day, y=week_value, group=subject_id, color=subject_id))+
+  geom_line()+
+  facet_grid(~group)+
+  labs(title = "Observations on each subject overtime")
+```
+
+First, values of experimental groups are larger than that of control groups overall. Second, data for participants in control groups are quite steady, while there is a growing trend among experimental groups overtime.
+
