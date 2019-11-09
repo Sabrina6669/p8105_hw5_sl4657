@@ -1,0 +1,123 @@
+---
+title: "hw5_sl4657"
+output: github_document
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r}
+library(tidyverse)
+
+set.seed(8)
+```
+
+# Problem 1
+```{r}
+iris_with_missing = iris %>% 
+  map_df(~replace(.x, sample(1:150, 20), NA)) %>%
+  mutate(Species = as.character(Species))
+
+deal_miss = function(x) {
+  if (is.numeric(x)) {
+    replace(x, is.na(x), mean(x, na.rm = TRUE))
+  } else if (is.character(x)) {
+    replace(x, is.na(x), "virginica")
+  }
+}
+iris_without_na=map_dfr(iris_with_missing, deal_miss)
+iris_without_na
+```
+
+# Problem 2
+```{r}
+file_name=list.files(path = "./data") 
+df= tibble("file_name"=file_name)
+df  
+
+df=df %>% 
+  mutate(
+    value=map(file_name, ~read_csv(str_c("./data/", .x))) 
+    )%>% 
+  unnest()
+df
+
+df=df %>% 
+  rename_all(~str_replace_all(., "week_", "")) %>% 
+  gather(key = week_day, value = week_value, `1`:`8`) %>% 
+  separate(file_name, into=c("group", "subject_id"), sep = "_") %>% 
+  mutate(subject_id = gsub(".csv$", "", subject_id)) %>% 
+  mutate(group= recode(group, "con"="control", "exp"="experimental"))
+df
+
+fig_1=df %>% 
+  ggplot(aes(x=week_day, y=week_value, group=subject_id, color=subject_id))+
+  geom_line()+
+  facet_grid(~group)+
+  labs(title = "Observations on each subject overtime")
+fig_1
+```
+
+First, values of experimental groups are larger than that of control groups overall. Second, data for participants in control groups are quite steady, while there is a growing trend among experimental groups overtime.
+
+# Problem 3
+```{r}
+sim_regression = function(n=30, beta0 = 2, beta1) {
+  sim_data = tibble(
+    x = rnorm(n, 0, 1),
+    y = beta0 + beta1 * x + rnorm(n, 0, 50)
+  )
+  
+  ls_fit = lm(y ~ x, data = sim_data)%>%
+     broom::tidy() %>%
+     select(term, estimate, p.value) %>%
+     filter(term == "x") %>%
+     mutate(term = recode(term, "x" = "beta1_hat"))
+}
+
+runs_10000=
+  rerun(10000, sim_regression(beta1 = 0)) %>% 
+  bind_rows()
+
+rep_beta1=
+  tibble(beta1 = c(1:6))%>% 
+  mutate(value=map(beta1, ~rerun(10000, sim_regression(beta1 = .x ))),
+         output=map(value, bind_rows)) %>% 
+  select(-value) %>% 
+  unnest(cols = c(output)) %>% 
+  select(-term)
+
+fig_2=rep_beta1 %>%
+  group_by(beta1) %>% 
+  mutate(times=case_when(
+    p.value<0.05~1,
+    TRUE~0)) %>% 
+  summarise(prop=mean(times, na.rm = T)) %>%
+  ggplot(aes(x=beta1, y=prop))+
+  geom_point()+
+  geom_smooth()+
+  labs(title = "Relationship between effect size and power")
+fig_2
+```
+
+As effect size increases, the power tends to grow up. We can draw 2 normal distrubition, and effect size is the distance between 2 curves' center, so power rises as effect size increases.
+
+```{r}
+avr=rep_beta1 %>%
+  group_by(beta1) %>% 
+  summarise(avr_beta=mean(estimate, na.rm = T)) 
+
+null_avr=rep_beta1%>% 
+  filter(p.value<0.05) %>% 
+  group_by(beta1) %>% 
+  summarise(null_avr=mean(estimate, na.rm = T))   
+
+fig_3=ggplot()+
+  geom_point(aes(x=beta1, y=avr_beta), data = avr, color="red")+
+  geom_smooth(aes(x=beta1, y=avr_beta), data = avr, color="red")+
+  geom_point(aes(x=beta1, y=null_avr), data = null_avr)+
+  geom_smooth(aes(x=beta1, y=null_avr), data = null_avr)+
+  labs( title = "Association between the average estimates and true values")
+fig_3
+```
+
+the sample average of β̂1 across tests for which the null is rejected is not equal to the true value of β1, and the average estimate of β̂1 across tests for which the null is rejected is always higher than the average estimate of β̂1.   However, as effect size increases, the average estimate of β̂1 under null hypothesis will approach the true value because it is easier to detect large effect size.
